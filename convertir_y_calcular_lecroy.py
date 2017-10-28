@@ -1,6 +1,5 @@
 #IMPORTANTE, PASAR A LA SESION DE BASH QUE USES, EL PATH DE ANACONDA
 #export PATH="/home/mhampel/LAB672017/Anaconda/bin:$PATH"
-import matplotlib.pyplot as plt
 import os
 import gc
 import psutil
@@ -18,7 +17,6 @@ from scipy.integrate import simps
 import csv
 import datetime
 import struct
-init_notebook_mode()
 import sys
 import time
 import datetime
@@ -26,10 +24,23 @@ import math
 import argparse
 import subprocess
 import vxi11
+import serial, time
+import ast
+import visa
 
 '''
 CHANGELOG:
 1.0: El codigo para medir, fue definido como una funcion aparte
+1.1: El codigo funciona, aunque no entiendo bien por que. Es necesario revisar la documentacion sobre los INR. Que hostia significa INR 0?
+1.2: Se agrego un segundo paso al codigo del analisis, teniendo en cuenta los criterios indicados el 19/6 en la reunion con Marie.
+Aun persiste el problema de 1.1
+1.2.1: Se corrigio un problema en analizador. Ya funciona correctamente.
+1.2.2: Integrador ajustado
+1.2.3: Se modifico el medidor de anchos, para que sea a mitad de pico
+'''
+'''
+FORKS:
+Guarda ambas trazsas
 '''
 
 ##
@@ -197,6 +208,45 @@ def importar_lecroy(fname):
 	gc.collect()
 	return trazas[1:]
 
+def importar_csv_simp(csvf):
+	'''
+	Dado un archivo csv, de la pinta:
+		LECROYWP715Zi-A,57936,Waveform
+		Segments,1000,SegmentSize,1002
+		Segment,TrigTime,TimeSinceSegment1
+		#1,03-May-2017 11:41:40,0
+	Lee los parametros (como estan divididas las trazas)
+	devuelve un array, donde cada una de las entradas, es la traza en formato
+	diccionario de Python (claves: tiempo, valores: voltaje)
+	'''
+
+	archivo = csv.reader(csvf, delimiter=',')
+	#pasamos el csv a una lista, donde cada objeto es una lista (linea)
+	lista = []
+	for j in archivo:
+		lista.append(j)
+	#nos fijamos cuantas mediciones hay por traza
+	mediciones_por_traza = int(lista[1][3])
+	#quitamos las primeras 3 lineas + #segments +1
+	mediciones = lista[3+int(lista[1][1])+1:len(lista)]
+	#llenamos las trazas
+	trazas = []
+	a = 0
+	for indice, valor in enumerate(mediciones):
+		#si el indice es congruente a 0 modulo numero de trazas, es que empezamos una
+		#traza nueva
+		if indice % mediciones_por_traza == 0:
+			trazas.append(a)
+			a = {}
+			#paso unidades a mv y ns
+			a[float(valor[0])*10**9]=float(valor[1])*1000
+		else:
+			a[float(valor[0])*10**9]=float(valor[1])*1000
+	del lista
+	gc.collect()
+	return trazas[1:]
+
+
 def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 	'''
 	Dada una traza en formato diccionario de Python (claves: tiempo, valores: voltaje)
@@ -210,12 +260,13 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 	Esta esta adaptada para los valores de la curva del SiPM
 	(nada mas peakutils, el resto es igual)
 	'''
-	#Ruidolimite determina los puntos que se utiliza para analizar E y sigma de Vbaseline
-	ruidolimite=200
+	#Ruidolimite determina los puntos que se utiliza para analizar E y sigma de Vbaseline.
+	#En este caso, es el primer 0.1 (10 por cierto) de la cantidad de puntos totales
+	ruidolimite=int(len(traza.keys())*0.1)
 	promedio = mean(list(traza.values())[0:ruidolimite])
 	desviacion = std(list(traza.values())[0:ruidolimite])
 	#Umbral de deteccion de picos, y integracion
-	threspeak = 10*desviacion
+	threspeak = 8*desviacion
 	thresint = 2*desviacion
 	#con el promedio y desviacion, centramos el grafico
 	#y lo multiplicamos por -1
@@ -225,7 +276,7 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 	tiempos = list(traza.keys())
 	#contamos picos:
 	#el min_dist es un poco arbitrario, deberia estar relacionado con el ETT
-	indices = peakutils.indexes(array(voltajes),min_dist=1000,thres=1.5*threspeak/max(voltajes))
+	indices = peakutils.indexes(array(voltajes),min_dist=len(voltajes)//3,thres=threspeak/max(voltajes))
 	#filtramos picos que no superen 2*std
 	indicesf = []
 
@@ -259,6 +310,30 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 				integrales = False
 				limites = False
 
+	#determinamos anchos a mitad de pico
+	limitesanchos = []
+	for i in indicesf:
+		cotainf=i
+		cotasup=i
+		#calculamos hasta donde hay que bajar (la mitad del pico)
+		thresancho=voltajes[i]/2
+		try:
+			while voltajes[cotasup]>thresancho:
+				cotasup+=1
+			while voltajes[cotainf]>thresancho:
+				cotainf-=1
+			limitesanchos.append([i,cotasup,cotainf])
+		except:
+			if correccion == True:
+				#Encontramos una excepcion, ploteo
+				graficar = True
+				integrales = False
+				limites = False
+				print("Error al integrar, ECC activo, procedo a devolver False")
+				asd = input("presione cualquier tecla para continuar")
+			else:
+				integrales = False
+				limites = False
 
 	#integramos usando el metodo de simpson
 	integrales=[]
@@ -284,7 +359,6 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 			mode='lines',
 			name='V(t)',
 			)
-
 		trace2 = go.Scatter(
 			x=[list(traza.keys())[j] for j in indicesf],
 			y=[voltajes[j] for j in indicesf],
@@ -295,24 +369,25 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 				symbol='cross'
 			),
 			name='Picos'
-			),
+			)
 		trace3 = go.Scatter(
 			x=[list(traza.keys())[ruidolimite]],
 			y=[voltajes[ruidolimite]],
 			mode='markers',
 			marker=dict(
 				size=8,
-				color='rgb(255,0,0)',
+				color='rgb(127,0,255)',
 				symbol='cross'
 			),
 			name='Limite de analisis Vbaseline'
 		)
+
 		if limites != False:
 			limitest = []
 			for i in limites:
 				limitest.append(i[1])
 				limitest.append(i[2])
-			trace3 = go.Scatter(
+			trace4 = go.Scatter(
 				x=[list(traza.keys())[j] for j in limitest],
 				y=[voltajes[j] for j in limitest],
 				mode='markers',
@@ -323,10 +398,25 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 				),
 				name='Limites de integracion'
 			)
+			limitesta = []
+			for i in limitesanchos:
+				limitesta.append(i[1])
+				limitesta.append(i[2])
+			trace5 = go.Scatter(
+				x=[list(traza.keys())[j] for j in limitesta],
+				y=[voltajes[j] for j in limitesta],
+				mode='markers',
+				marker=dict(
+					size=8,
+					color='rgb(255,128,0)',
+					symbol='cross'
+				),
+				name='Linea de medicion de ancho'
+			)
 
 		layout = go.Layout(
 		xaxis=dict(
-			title='Tiempo (nS)',
+			title='Tiempo (ns)',
 				  titlefont=dict(
 				family='Courier New, monospace',
 				size=18,
@@ -345,23 +435,26 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 		#,width=800*2, height=640*2
 		)
 		if limites != False:
-			data = [trace, trace2, trace3]
+			data = [trace, trace2, trace3, trace4, trace5]
 		else:
 			data = [trace, trace2]
 		fig = go.Figure(data=data, layout=layout)
 		plot(fig)
 
+
 	if anchopico == True:
 		anchos = []
 		if limites != False:
-			for i in limites:
+			for i in limitesanchos:
 				anchos.append(tiempos[i[1]]-tiempos[i[2]])
+			for i in limites:
+				risetime.append(tiempos[voltajes.index(max(voltajes))]-tiempos[i[2]])
 		else:
-			return False, False
-		return integrales, anchos
+			return False, False, False
+		return integrales, anchos, desviacion, risetime
 
 
-	return integrales
+	return integrales, desviacion
 
 def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	'''
@@ -378,9 +471,9 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	A continuacion hay una serie de parametros que pueden ser hardcodeados
 	'''
 	#IP del osc?
-	DSO_IP = "192.168.0.1"
+	DSO_IP = "192.168.0.2"
 	NEW_TIMEOUT = 600*NUM_SEQ
-	# Preparo conexión con el DSO
+	# Preparo conexion con el DSO
 	print('Dirección IP del instrumento: %s\nConectando con instrumento...' %DSO_IP)
 	# Asigno la dirección IP.
 	InstDSO = vxi11.Instrument(str(DSO_IP))
@@ -389,10 +482,10 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	NombreInst = InstDSO.ask("*IDN?")	# Conexión vía LXI
 	print('Conectado mediante VXi11 (LXI) al instrumento: %s\n' %NombreInst)
 	InstDSO.write("ACAL OFF")	# Auto-calibración interna ON
-	InstDSO.write("TIME_DIV 50NS")
+	InstDSO.write("TIME_DIV 20NS")
 	#Trigger tipo edge, del canal 2, sin hold
 	InstDSO.write("TRIG_SELECT EDGE, SR, C2, HT, OFF")
-	InstDSO.write("TRIG_DELAY -150NS")
+	InstDSO.write("TRIG_DELAY -80NS")
 	#Triggerea cuando la senal baja del valor de trigger
 	InstDSO.write("C2:TRIG_SLOPE NEG")
 	InstDSO.write("C2:TRIG_LEVEL " + TRIG_LVL)
@@ -453,22 +546,21 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	print('Esperando a que finalice la adquisición')
 	#STB = InstDSO.ask("*STB?")
 	#print('STB: %s' %STB)
-	INRStatus = 0
+	INRStatus = False
 	#INRStatus = InstDSO.ask("INR?")	# Limpio el registro
 	#----------------> TODO: PREGUNTAR POR CODIGOS INR
 	#ACASO 8193 O 1 SIGNIFICA QUE YA MIDIO Y ESTA LISTO PARA BAJAR LA TRAZA?
 	#Cambiar el while a lo que sea que signifique que haya medido y este listo para entregar signal
-	try:
-		while (INRStatus != 'INR 1' and INRStatus != 'INR 8193'):
+	while (INRStatus != 'INR 1' and INRStatus != 'INR 8193' and INRStatus != 'INR 0'):
+		try:
 			INRStatus = InstDSO.ask("INR?")
-			print(INRStatus)
-			time.sleep(2)
-	except OSError as e:
-		print('%s %s' %(e, sys.stderr))
-	finally:
-		print('Adquisición finalizada correctamente')
+		except:
+			print(sys.stderr)
+		print(INRStatus)
+		time.sleep(2)
+	print('Adquisición finalizada correctamente')
 	print('Obteniendo trazas del oscilo')
-	InstDSO.write("C1:WF? ALL")
+	InstDSO.write("C2:WF? ALL")
 	trazas = InstDSO.read_raw()
 	if nombre_a_guardar!=False:
 		with open(nombre_a_guardar+'.trc','wb') as C1_Trace:
@@ -480,70 +572,218 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	print('Fin del programa DSO\n')
 	return importar_lecroy('temp.trc')
 
+## Comunicacion con Arduino
+
+#=====================================
+
+def sendToArduino(sendStr):
+  arduino.write(sendStr)
+
+
+#======================================
+
+def recvFromArduino():
+  startMarker = 60
+  endMarker = 62
+
+  ck = ""
+  x = "z" # any value that is not an end- or startMarker
+  byteCount = -1 # to allow for the fact that the last increment will be one too many
+
+  # wait for the start character
+  while  ord(x) != startMarker:
+    x = arduino.read()
+
+  # save data until the end marker is found
+  while ord(x) != endMarker:
+    if ord(x) != startMarker:
+      ck = ck + x
+      byteCount += 1
+    x = arduino.read()
+
+  return(ck)
+
+
+#============================
+
+def waitForArduino():
+
+   # wait until the Arduino sends 'Arduino Ready' - allows time for Arduino reset
+   # it also ensures that any bytes left over from a previous message are discarded
+
+    global startMarker, endMarker
+
+    msg = ""
+    while msg.find("READY") == -1:
+
+      while arduino.inWaiting() == 0:
+        pass
+
+      msg = recvFromArduino()
+
+
+      print(msg)
+
+#======================================
+
+def cambiarParametros(td):
+  numLoops = len(td)
+  waitingForReply = False
+
+  n = 0
+  while n < numLoops:
+
+    teststr = td[n]
+
+    if waitingForReply == False:
+      sendToArduino(teststr.encode())
+      print("Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr)
+      '''
+      waitingForReply = True
+
+    if waitingForReply == True:
+
+      while arduino.inWaiting() == 0:
+        pass
+
+      dataRecvd = recvFromArduino()
+      print("Recibido  " + dataRecvd)
+      n += 1
+      waitingForReply = False
+
+      print("===========")
+      '''
+    time.sleep(5)
+
+def registroArduino(arduino,script_dir):
+   #Guardamos los datos que entrega el arduino via serial
+    linea = arduino.readline().decode('utf-8')
+    print(linea)
+    with open(script_dir+"output.txt",'a') as file:
+        file.write(linea+"\n")
+    try:
+    	linea = ast.literal_eval(linea)
+    except:
+        linea = ""
+    if type(linea) == list:
+        #Veamos por casos, que tipo de informacion recibimos
+        if type(linea[0]) == int:
+	        with open(script_dir+"sensor"+str(linea[0])+".txt",'a') as file:
+	            file.write(str(linea[1])+','+str(linea[2])+"\n")
+
 #####
 #Fin de definicion de funciones
 #####
-
-#script_dir = os.path.dirname(__file__)
-#script_dir = '/home/opamp/Dropbox/ITeDA/Scripts Lecroy'
-
+#CONFIG
+script_dir = '~/Dropbox/ITeDA/Scripts/Lecroy/Caracterización pulsos SPE en funcion de temperatura/resultados'
+temperaturasAMedir = range(5,66)
+ktrazasPorTemperatura = 50
+rm = visa.ResourceManager('@py')
+inst = rm.open_resource("USB0::1155::30016::SPD00002140064::0::INSTR")
+arduino = serial.Serial("/dev/ttyACM2", 9600)
+#guarda en formato valor,temp
 salida=open('minimos.txt','w')
 salida2=open('integrales.txt','w')
 salida3=open('anchos.txt','w')
-
-descartados=0
-total=0
-
+salida4=open('risetime.txt','w')
 #Cuantas veces queres correr el programa? Tendras 1000*Corridas_globales trazas
-corridas_globales=100
 guardar_en_disco=True
-analizar=False
+analizar=True
 medir=True
 inicio=time.time()
-
-
+ultimoRegistroArduino=inicio
 
 #----------------------------------------------------------------------#
 # Programa principal
 #----------------------------------------------------------------------#
+for temperatura in temperaturasAMedir:
+	cambiarParametros(["<setpoint,"+"10"+">"])
+	#Antes de medir, esperamos que se estabilice la temperatura
+	estabilizado=False
+	while not estabilizado:
+		#Guardamos los datos que entrega el arduino via serial
+		linea = arduino.readline().decode('utf-8')
+		print(linea)
+		with open(script_dir+"output.txt",'a') as file:
+			file.write(linea+"\n")
+		try:
+			linea = ast.literal_eval(linea)
+		except:
+			linea = ""
+		if type(linea) == list:
+			#Veamos por casos, que tipo de informacion recibimos
+			if type(linea[0]) == int:
+				with open(script_dir+"sensor"+str(linea[0])+".txt",'a') as file:
+					file.write(str(linea[1])+','+str(linea[2])+"\n")
+				#El sensor 7 es de control. Estamos listos?
+				if linea[0] == 7 and abs(linea[1]-temperatura)<0.3:
+					estabilizado=True
 
+	for k in range(0,1000*ktrazasPorTemperatura):
+		print("Iniciando corrida " +str(k)+" setpoint "+str(temperatura))
+		corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura)+"_"+str(k).zfill(9))
+		registroArduino(arduino,script_dir)
 
-for k in range(0,corridas_globales):
-	# Preparo conexión con el DSO
-	print("Iniciando corrida " +str(k))
-	if k!=0:
-		print("A este ritmo, completare el trabajo en " + str((time.time()-inicio)/(k*60)*(corridas_globales-k)) + " minutos")
-	if medir == True:
-		if guardar_en_disco==True:
-			corrida = medir_osc('20MV','60.8MV','-30MV',1000,str(k).zfill(9))
-		else:
-			corrida = medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,1)
-	'''
-	Ojo, si NO vas a medir, tener que suplir de alguna manera las corridas en cada paso
-	y ajustar corridas_globales a ello
-	'''
-	if analizar == True:
-		for j in range(0, len(corrida)):
-			#analisis de minimos
-			a=min(corrida[j].values())
-			salida.write(str(a)+'\n')
-			#integracion y anchos
-			integrales, anchos = sipm_integrar(corrida[j],True,True,False)
-			#nos quedamos unicamente en los casos donde haya un unico pico
-			if integrales != False:
-				for k in integrales:
-					total+=1
-					salida2.write(str(k)+'\n')
-					for m in anchos:
-						salida3.write(str(m)+'\n')
-			else:
-				descartados+=1
+		if analizar == True:
+			#Realizamos una primer pasada donde calculamos todo (minimos, anchos, integrales)
+			#Luego, en una segunda pasada, descartamos los que se desvian en ksigma
+			#de la esperanza
+			#Cada resultado corresponde a una matriz con la siguiente sintaxis
+			#[desviacion, minimos, [integrales], [anchos],[risetime]]
+			for j in range(0, len(corrida)):
+				#integracion y anchos
+				integrales, anchos, desviacion, risetime = sipm_integrar(corrida[j],False,True,False)
+				#nos quedamos unicamente en los casos donde no hubo problemas
+				#para integrar. Llenamos los resultados de esta pasada
+				resj=[]
+				if integrales != False:
+					#analisis de minimos
+					resj.append(desviacion)
+					resj.append(max(corrida[j].values()))
+					resj.append(integrales)
+					resj.append(anchos)
+					resj.append(risetime)
+					resultados.append(resj)
+				#print(j/len(corrida)*100)
+				total+=1
+				if time.time()-ultimoRegistroArduino>30:
+					registroArduino(arduino,script_dir)
+					ultimoRegistroArduino=time.time()
 
-				print(j/len(corrida)*100)
+		#Analizadas todas las trazas, pasamos a descartar
+		if analizar == True:
+			anchos_primer=[]
+			desviaciones_primer=[]
+			for i in resultados:
+				for j in i[3]:
+					anchos_primer.append(j)
+				desviaciones_primer.append(i[0])
+			umbral_anchos=4*std(anchos_primer)
+			promedio_anchos=mean(anchos_primer)
+			umbral_desviacion=6*std(desviaciones_primer)
+			promedio_desviacion=mean(desviaciones_primer)
+			#print(umbral_anchos, promedio_anchos, umbral_desviacion, promedio_desviacion)
+			#Con ello, podemos pasar a escribir los archivos
+			for i in resultados:
+				#si la medicion es muy ruidosa, la descarto
+				guardartr = True
+				if not (i[0]<promedio_desviacion+umbral_desviacion and i[0]>promedio_desviacion-umbral_desviacion):
+					guardartr = False
+				for j in i[3]:
+					#si el ancho es muy grande, lo descarto
+					if not (j<promedio_anchos+umbral_anchos and j>promedio_anchos-umbral_anchos):
+						guardartr = False
+				if guardartr == True:
+					salida.write(str(i[1])+","+str(temperatura)+'\n')
+					for j in i[2]:
+						salida2.write(str(j)+","+str(temperatura)+'\n')
+					for j in i[3]:
+						salida3.write(str(j)+","+str(temperatura)+'\n')
+					for j in i[4]:
+						salida4.write(str(j)+","+str(temperatura)+'\n')
 
-print('Procese unicamente el siguiente procentaje de picos')
-print((1-descartados/total)*100)
-print('Corri en '+str(time.time()-inicio)+' segundos')
+		registroArduino(arduino,script_dir)
+
 
 '''
 #Ploteamos los histogramas finales
