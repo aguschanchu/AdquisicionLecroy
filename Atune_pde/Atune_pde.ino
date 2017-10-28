@@ -38,8 +38,8 @@ double newSetpoint;
 //Utilizado para la comunicacion
 const byte buffSize = 40;
 char inputBuffer[buffSize];
-const char startMarker = '<';
-const char endMarker = '>';
+const char startMarker = '[';
+const char endMarker = ']';
 byte bytesRecvd = 0;
 char messageFromPC[buffSize] = {0};
 boolean readInProgress = false;
@@ -206,17 +206,13 @@ void loop()
   //send-receive with processing if it's time
   if(millis()>serialTime)
   {
-    SerialSend();
     //Enviamos OK a PC, y esperamos respuesta
-    Serial.flush();
-    Serial.println("READY");
-    delay(100);
+    Serial.println("[READY]");
     getDataFromPC();
-    update();
-    delay(100);
     replyToPC();
-    delay(100);
     serialTime+=60*1000;
+    delay(1000);
+    SerialSend();
   }
 
   // Enviamos la temperatura del resto de los sensores
@@ -360,7 +356,8 @@ void parseData() {
 
   strtokIndx = strtok(NULL, ","); // this continues where the previous call left off
   newSetpoint = atoi(strtokIndx);     // convert this part to an integer
-
+  //Actulizamos con lo Recibido
+  update();
 }
 
 //=============
@@ -369,9 +366,8 @@ void replyToPC() {
 
   if (newDataFromPC) {
     newDataFromPC = false;
-    Serial.print("<Msg ");
-    Serial.print("OK");
-    Serial.println(">");
+    Serial.println("[OK]");
+
   }
 }
 

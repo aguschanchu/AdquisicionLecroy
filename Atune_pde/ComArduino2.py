@@ -76,7 +76,7 @@ def recvFromArduino():
   # save data until the end marker is found
   while ord(x) != endMarker:
     if ord(x) != startMarker:
-      ck = ck + x
+      ck = ck + x.decode('utf-8')
       byteCount += 1
     x = ser.read()
 
@@ -100,8 +100,7 @@ def waitForArduino():
 
       msg = recvFromArduino()
 
-      print msg
-      print
+      print(msg)
 
 #======================================
 
@@ -115,8 +114,8 @@ def cambiarParametros(td):
     teststr = td[n]
 
     if waitingForReply == False:
-      sendToArduino(teststr)
-      print "Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr
+      sendToArduino(teststr.encode())
+      print("Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr)
       waitingForReply = True
 
     if waitingForReply == True:
@@ -125,11 +124,10 @@ def cambiarParametros(td):
         pass
 
       dataRecvd = recvFromArduino()
-      print "Recibido  " + dataRecvd
+      print("Recibido  " + dataRecvd)
       n += 1
       waitingForReply = False
 
-      print "==========="
 
     time.sleep(5)
 
@@ -143,25 +141,23 @@ def cambiarParametros(td):
 import serial
 import time
 
-print
-print
 
 # NOTE the user must ensure that the serial port and baudrate are correct
 serPort = "/dev/ttyACM0"
 baudRate = 9600
 ser = serial.Serial(serPort, baudRate)
-print "Serial port " + serPort + " opened  Baudrate " + str(baudRate)
+print("Serial port " + serPort + " opened  Baudrate " + str(baudRate))
 
 
-startMarker = 60
-endMarker = 62
+startMarker = 91
+endMarker = 93
 
 
 waitForArduino()
 
 
 testData = []
-testData.append("<setpoint,15>")
+testData.append("[setpoint,20]")
 
 cambiarParametros(testData)
 

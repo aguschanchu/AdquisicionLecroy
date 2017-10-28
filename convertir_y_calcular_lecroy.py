@@ -583,8 +583,8 @@ def sendToArduino(sendStr):
 #======================================
 
 def recvFromArduino():
-  startMarker = 60
-  endMarker = 62
+  startMarker = 91
+  endMarker = 93
 
   ck = ""
   x = "z" # any value that is not an end- or startMarker
@@ -593,14 +593,12 @@ def recvFromArduino():
   # wait for the start character
   while  ord(x) != startMarker:
     x = arduino.read()
-
   # save data until the end marker is found
   while ord(x) != endMarker:
     if ord(x) != startMarker:
-      ck = ck + x
+      ck = ck + x.decode('utf-8')
       byteCount += 1
     x = arduino.read()
-
   return(ck)
 
 
@@ -627,33 +625,38 @@ def waitForArduino():
 #======================================
 
 def cambiarParametros(td):
-  numLoops = len(td)
-  waitingForReply = False
-
-  n = 0
-  while n < numLoops:
-
-    teststr = td[n]
-
-    if waitingForReply == False:
-      sendToArduino(teststr.encode())
-      print("Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr)
-      '''
-      waitingForReply = True
-
-    if waitingForReply == True:
-
-      while arduino.inWaiting() == 0:
-        pass
-
-      dataRecvd = recvFromArduino()
-      print("Recibido  " + dataRecvd)
-      n += 1
-      waitingForReply = False
-
-      print("===========")
-      '''
-    time.sleep(5)
+	numLoops = len(td)
+	waitingForReply = False
+	waitForArduino()
+	n = 0
+	while n < numLoops:
+		teststr = td[n]
+		if waitingForReply == False:
+			waitForArduino()
+		sendToArduino(teststr.encode())
+		print("Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr)
+		waitingForReply = True
+		dataRecvd=""
+		paquetesRecibidos = 0
+		while waitingForReply:
+			while arduino.inWaiting() == 0:
+    				pass
+			dataRecvd = recvFromArduino()
+			paquetesRecibidos+=1
+			#Esperamos a confirmacion de lo recibido
+			if dataRecvd.find("OK") != -1:
+				waitingForReply = False
+			print("Recibido  " + dataRecvd)
+			#Ya enviamos el mensaje, y esperamos una cierta cantidad de paquetes para recibir confirmacion
+			#Si se demora mucho, enviamos otro
+			if paquetesRecibidos>20:
+				waitForArduino()
+				sendToArduino(teststr.encode())
+				print("Enviado -- LOOP NUM " + str(n) + " TEST STR " + teststr)
+				paquetesRecibidos=0
+		n += 1
+		print("===========")
+		time.sleep(5)
 
 def registroArduino(arduino,script_dir):
    #Guardamos los datos que entrega el arduino via serial
@@ -675,7 +678,7 @@ def registroArduino(arduino,script_dir):
 #Fin de definicion de funciones
 #####
 #CONFIG
-script_dir = '~/Dropbox/ITeDA/Scripts/Lecroy/Caracterización pulsos SPE en funcion de temperatura/resultados'
+script_dir = '~/Dropbox/ITeDA/Scripts/Lecroy/Caracterización pulsos SPE en funcion de temperatura/resultados/'
 temperaturasAMedir = range(5,66)
 ktrazasPorTemperatura = 50
 rm = visa.ResourceManager('@py')
@@ -697,7 +700,7 @@ ultimoRegistroArduino=inicio
 # Programa principal
 #----------------------------------------------------------------------#
 for temperatura in temperaturasAMedir:
-	cambiarParametros(["<setpoint,"+"10"+">"])
+	cambiarParametros(["[setpoint,"+str(temperatura)+"]"])
 	#Antes de medir, esperamos que se estabilice la temperatura
 	estabilizado=False
 	while not estabilizado:
