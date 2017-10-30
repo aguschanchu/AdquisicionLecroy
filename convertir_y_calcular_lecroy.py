@@ -37,10 +37,10 @@ Aun persiste el problema de 1.1
 1.2.1: Se corrigio un problema en analizador. Ya funciona correctamente.
 1.2.2: Integrador ajustado
 1.2.3: Se modifico el medidor de anchos, para que sea a mitad de pico
+1.3: Se agrego funciones para comunicarse con el sistema de control de Arduino
 '''
 '''
-FORKS:
-Guarda ambas trazsas
+
 '''
 
 ##
@@ -722,7 +722,7 @@ for temperatura in temperaturasAMedir:
 				if linea[0] == 7 and abs(linea[1]-temperatura)<0.3:
 					estabilizado=True
 
-	for k in range(0,1000*ktrazasPorTemperatura):
+	for k in range(0,ktrazasPorTemperatura):
 		print("Iniciando corrida " +str(k)+" setpoint "+str(temperatura))
 		corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura)+"_"+str(k).zfill(9))
 		registroArduino(arduino,script_dir)
@@ -777,13 +777,13 @@ for temperatura in temperaturasAMedir:
 					if not (j<promedio_anchos+umbral_anchos and j>promedio_anchos-umbral_anchos):
 						guardartr = False
 				if guardartr == True:
-					salida.write(str(i[1])+","+str(temperatura)+'\n')
+					salida.write(str(i[1])+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
 					for j in i[2]:
-						salida2.write(str(j)+","+str(temperatura)+'\n')
+						salida2.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
 					for j in i[3]:
-						salida3.write(str(j)+","+str(temperatura)+'\n')
+						salida3.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
 					for j in i[4]:
-						salida4.write(str(j)+","+str(temperatura)+'\n')
+						salida4.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
 
 		registroArduino(arduino,script_dir)
 
