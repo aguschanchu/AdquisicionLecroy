@@ -629,6 +629,8 @@ for temperatura in temperaturasAMedir:
 		print("Temperatura de medicion: " + str(temperatura))
 		if abs(control-temperatura) < 0.2:
 			estabilizado=True
+			#esperamos 15 de estabilizacion en esa temp
+			time.sleep(15*60)
 		time.sleep(10)
 
 	for k in range(0,ktrazasPorTemperatura):
