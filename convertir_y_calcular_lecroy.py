@@ -460,7 +460,7 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 
 	return integrales, desviacion
 
-def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
+def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False,analizar=False):
 	'''
 	Se conecta al osciloscopio, y mide en el canal 2
 	Los argumentos son
@@ -469,6 +469,7 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	3) Nivel de trigger (misma notacion que 1)
 	4) Numero de secuencias (o trazas) a medir [INT] Ej. 1000
 	5) nombre_a_guardar es el nombre del archivo (sin .TRC)
+	6) Si analizar es falso, no devuelve nada (solo guarda en disco, de haberlo solicitado)
 	a guardar en el disco. Por default, no guarda [STRING o False] Ej. "1001particula"
 	Ojo que las tira en workingdir
 	Devuelve las mediciones en formato usual
@@ -565,7 +566,11 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	print('Adquisición finalizada correctamente')
 	print('Obteniendo trazas del oscilo')
 	InstDSO.write("C2:WF? ALL")
-	trazas = InstDSO.read_raw()
+	try:
+		trazas = InstDSO.read_raw()
+	except:
+		gc.collect()
+		return False
 	if nombre_a_guardar!=False:
 		with open(script_dir+nombre_a_guardar+'.trc','wb') as C1_Trace:
 			C1_Trace.write(trazas)
@@ -574,7 +579,11 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 	time.sleep(2)
 	InstDSO.close()
 	print('Fin del programa DSO\n')
-	return importar_lecroy(script_dir+'temp.trc')
+	if analizar:
+		return importar_lecroy(script_dir+'temp.trc')
+	else:
+		return True
+
 
 
 #####
@@ -594,7 +603,7 @@ salida3=open('anchos.txt','w')
 salida4=open('risetime.txt','w')
 #Cuantas veces queres correr el programa? Tendras 1000*Corridas_globales trazas
 guardar_en_disco=True
-analizar=True
+analizar=False
 medir=True
 inicio=time.time()
 resultados=[]
@@ -612,6 +621,7 @@ for temperatura in temperaturasAMedir:
 	r.set("setpoint",temperatura)
 	#Antes de medir, esperamos que se estabilice la temperatura
 	estabilizado=False
+	gc.collect()
 	while not estabilizado:
 		#Guardamos los datos que entrega el arduino via serial
 		control = float(r.get("control").decode('UTF-8'))
@@ -623,7 +633,12 @@ for temperatura in temperaturasAMedir:
 
 	for k in range(0,ktrazasPorTemperatura):
 		print("Iniciando corrida " +str(k)+" setpoint "+str(temperatura))
-		corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9))
+		corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9),False)
+		intentos = 0
+		while intentos < 10 and corrida == False:
+			corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9),False)
+			intentos+=1
+
 		if analizar == True:
 			#Realizamos una primer pasada donde calculamos todo (minimos, anchos, integrales)
 		#Luego, en una segunda pasada, descartamos los que se desvian en ksigma
