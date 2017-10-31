@@ -582,7 +582,7 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False):
 #####
 #CONFIG
 script_dir = '/home/iteda/Dropbox/ITeDA/Scripts/Lecroy/resultados/'
-temperaturasAMedir = list(range(12,66)) + list(range(5,12))
+temperaturasAMedir = list(range(20,66)) + list(range(5,20))
 ktrazasPorTemperatura = 50
 #rm = visa.ResourceManager('@py')
 #inst = rm.open_resource("USB0::1155::30016::SPD00002140064::0::INSTR")
@@ -624,8 +624,6 @@ for temperatura in temperaturasAMedir:
 	for k in range(0,ktrazasPorTemperatura):
 		print("Iniciando corrida " +str(k)+" setpoint "+str(temperatura))
 		corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9))
-		with open(script_dir+'timestamp.txt','a') as archivo:
-			archivo.write(str(temperatura).zfill(2)+"_"+str(k).zfill(9)+','+str(time.time()-inicio))
 		if analizar == True:
 			#Realizamos una primer pasada donde calculamos todo (minimos, anchos, integrales)
 		#Luego, en una segunda pasada, descartamos los que se desvian en ksigma
