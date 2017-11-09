@@ -23,12 +23,8 @@ import datetime
 import math
 import argparse
 import subprocess
-import vxi11
 import serial, time
 import ast
-import visa
-import redis
-
 '''
 CHANGELOG:
 1.0: El codigo para medir, fue definido como una funcion aparte
@@ -42,7 +38,7 @@ Aun persiste el problema de 1.1
 1.3.1: Nuevo protocolo de comunicacion via Redis
 '''
 '''
-
+FORK: Modificado el main para importar una traza y graficarla
 '''
 
 ##
@@ -502,7 +498,6 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False,analiza
 	InstDSO.write("C2:TRACE ON")
 	InstDSO.write("C2:VDIV " + CH_SCALE)
 	InstDSO.write("C2:OFST " + CH_OFFSET)
-	InstDSO.write("Memory_SIZe 5MA")
 	InstDSO.write("C2:COUPLING D50")
 	InstDSO.write("BWL C2,ON")
 	# Configuración canal 3
@@ -589,146 +584,17 @@ def medir_osc(CH_SCALE,CH_OFFSET,TRIG_LVL,NUM_SEQ,nombre_a_guardar=False,analiza
 		return True
 
 
-def medir_osc_rate(nombre_a_guardar=False):
-	'''
-	Se conecta al osciloscopio, y mide en el canal 2
-	Los argumentos son
-	1) Escala vertical [voltaje/div, en string y con unidades]. Ej: "1.0MV"
-	2) Offset vertical (misma notacion que 1)
-	3) Nivel de trigger (misma notacion que 1)
-	4) Numero de secuencias (o trazas) a medir [INT] Ej. 1000
-	5) nombre_a_guardar es el nombre del archivo (sin .TRC)
-	a guardar en el disco. Por default, no guarda [STRING o False] Ej. "1001particula"
-	Ojo que las tira en workingdir
-	Devuelve las mediciones en formato usual
-	A continuacion hay una serie de parametros que pueden ser hardcodeados
-	'''
-	#IP del osc?
-	DSO_IP = "192.168.0.2"
-	NEW_TIMEOUT = 600*5
-	# Preparo conexion con el DSO
-	print('Direccion IP del instrumento: %s\nConectando con instrumento...' %DSO_IP)
-	# Asigno la dirección IP.
-	InstDSO = vxi11.Instrument(str(DSO_IP))
-	# Consulto por el nombre del instrumento. Esto me sirve para ver si estoy
-	# conectado al instrumento o no.
-	NombreInst = InstDSO.ask("*IDN?")	# Conexión vía LXI
-	print('Conectado mediante VXi11 (LXI) al instrumento: %s\n' %NombreInst)
-	InstDSO.write("ACAL OFF")	# Auto-calibración interna ON
-	InstDSO.write("TIME_DIV 1.0E-4")
-	#Trigger tipo edge, del canal 2, sin hold
-	InstDSO.write("TRIG_SELECT EDGE, SR, LINE, HT, OFF")
-	#InstDSO.write("TRIG_DELAY -80NS")
-	#Triggerea cuando la senal baja del valor de trigger
-	#InstDSO.write("C2:TRIG_SLOPE POS")
-	#InstDSO.write("C2:TRIG_LEVEL " + TRIG_LVL)
-	#Seteamos el numero de puntos a 5Mega Samples
-	InstDSO.write("Memory_SIZe 0.5MA")
-	#El valor medio de la señal es 0, de modo, que usamos acoplamiento DC
-	InstDSO.write("C2:TRIG_COUPLING DC")
-	# Configuración canal 1
-	InstDSO.write("C1:TRACE OFF")
-	# Configuración canal 2
-	InstDSO.write("C2:TRACE ON")
-	InstDSO.write("C2:VDIV 7.0E-3")
-	InstDSO.write("C2:OFST 21.0E-3")
-	InstDSO.write("C2:COUPLING D50")
-	InstDSO.write("BWL C2,ON")
-	# Configuración canal 3
-	InstDSO.write("C3:TRACE OFF")
-	# Configuración canal 4
-	InstDSO.write("C4:TRACE OFF")
-	# Configuro la adquisición con sequence
-	InstDSO.write("SEQ ON, 50")
-	# Que no almacene trazas en el disco
-	InstDSO.write("STST C2, HDD, AUTO, OFF")
-	#Le estamos diciendo que almacene toda la informacion
-	InstDSO.write("WFSU SP, 0, NP, 0, FP, 0, SN, 0")
-	#Formato de trasmision de informacion
-	InstDSO.write("CFMT DEF9,WORD,BIN")
-	TimeOutVal = InstDSO.timeout
-	print('Valor original de TimeOut: %d' %TimeOutVal)
-	InstDSO.timeout = NEW_TIMEOUT
-	TimeOutVal = InstDSO.timeout
-	print('Valor actual de TimeOut: %d' %TimeOutVal)
-	##############
-	#FIN DE CONFIGURACION OSCILOSCOPIO
-	##############
-	# Asigno la dirección IP.
-	InstDSO = vxi11.Instrument(str(DSO_IP))
-	# Consulto por el nombre del instrumento. Esto me sirve para ver si estoy
-	# conectado al instrumento o no.
-	NombreInst = InstDSO.ask("*IDN?")	# Conexión vía LXI
-	print('Dirección IP del instrumento: %s\nConectando con instrumento...' %DSO_IP)
-	print(NombreInst)
-	INRStatus = 0
-	INRStatus = InstDSO.ask("INR?")
-	print('INR: %s' %INRStatus)
-	try:
-		if(INRStatus == 'INR 8193'):
-				print('Señal adquirida y lista para ser guardada.\nDSO Listo para ser disparado.')
-		elif(INRStatus == 'INR 8192' or INRStatus == 'INR 0' or INRStatus == 'INR 1'):
-				print('DSO Listo para ser disparado')
-				InstDSO.write("TRMD SINGLE")
-				#InstDSO.write("ARM")	# Hago un disparo del trigger en modo "single"
-				InstDSO.write("WAIT")
-				#print(InstDSO.ask("INR?"))
-				time.sleep(2)
-	except OSError as e:
-		print('DSO no disparado: %s %s' %(e, sys.stderr))
-	finally:
-		print('DSO disparado...')
-	print('Esperando a que finalice la adquisición')
-	#STB = InstDSO.ask("*STB?")
-	#print('STB: %s' %STB)
-	INRStatus = False
-	#INRStatus = InstDSO.ask("INR?")	# Limpio el registro
-	#----------------> TODO: PREGUNTAR POR CODIGOS INR
-	#ACASO 8193 O 1 SIGNIFICA QUE YA MIDIO Y ESTA LISTO PARA BAJAR LA TRAZA?
-	#Cambiar el while a lo que sea que signifique que haya medido y este listo para entregar signal
-	while (INRStatus != 'INR 1' and INRStatus != 'INR 8193' and INRStatus != 'INR 0'):
-		try:
-			INRStatus = InstDSO.ask("INR?")
-		except:
-			print(sys.stderr)
-		print(INRStatus)
-		time.sleep(2)
-	print('Adquisición finalizada correctamente')
-	print('Obteniendo trazas del oscilo')
-	analizar=False
-	InstDSO.write("C2:WF? ALL")
-	try:
-		trazas = InstDSO.read_raw()
-	except:
-		gc.collect()
-		return False
-	if nombre_a_guardar!=False:
-		with open(script_dir+nombre_a_guardar+'.trc','wb') as C1_Trace:
-			C1_Trace.write(trazas)
-	if analizar:
-		with open(script_dir+'temp.trc','wb') as C1_Trace:
-			C1_Trace.write(trazas)
-	time.sleep(2)
-	trazas = False
-	gc.collect()
-	InstDSO.close()
-	print('Fin del programa DSO\n')
-	if analizar:
-		return importar_lecroy(script_dir+'temp.trc')
-	else:
-		return True
-
 
 #####
 #Fin de definicion de funciones
 #####
 #CONFIG
-script_dir = '/media/iteda/364E79EC4E79A571/ITeDA/SiPM/Corrida3/'
-temperaturasAMedir = list(range(10,50))
+script_dir = '/home/iteda/Dropbox/ITeDA/Scripts/Lecroy/resultados/'
+temperaturasAMedir = list(range(20,66)) + list(range(5,20))
 ktrazasPorTemperatura = 50
 #rm = visa.ResourceManager('@py')
 #inst = rm.open_resource("USB0::1155::30016::SPD00002140064::0::INSTR")
-r = redis.StrictRedis(host='localhost', port=30000, db=0)
+#r = redis.StrictRedis(host='localhost', port=30000, db=0)
 #guarda en formato valor,temp
 salida=open('minimos.txt','w')
 salida2=open('integrales.txt','w')
@@ -736,8 +602,8 @@ salida3=open('anchos.txt','w')
 salida4=open('risetime.txt','w')
 #Cuantas veces queres correr el programa? Tendras 1000*Corridas_globales trazas
 guardar_en_disco=True
-analizar=False
-medir=True
+analizar=True
+medir=False
 inicio=time.time()
 resultados=[]
 descartados=0
@@ -751,36 +617,16 @@ if medir == True:
 	calentar = medir_osc('2.0MV','7.0MV','-9MV',100)
 
 for temperatura in temperaturasAMedir:
-	r.set("setpoint",temperatura)
 	#Antes de medir, esperamos que se estabilice la temperatura
 	estabilizado=False
 	gc.collect()
-	while not estabilizado:
-		#Guardamos los datos que entrega el arduino via serial
-		control = float(r.get("control").decode('UTF-8'))
-		print("Temperatura de control: " + str(control))
-		print("Temperatura de medicion: " + str(temperatura))
-		if abs(control-temperatura) < 0.2:
-			estabilizado=True
-			#esperamos 20 de estabilizacion en esa temp
-			time.sleep(60*60)
-		time.sleep(10)
 
-	#Corremos funciones de caracterizacion de rate de DR
-	for k in range(0,50):
-		corrida = medir_osc_rate('DR_'+str(temperatura).zfill(2)+"_"+str(k).zfill(9))
-		intentos = 0
-		while intentos < 10 and corrida == False:
-			corrida = medir_osc_rate('DR_'+str(temperatura).zfill(2)+"_"+str(k).zfill(9))
-			intentos+=1
-
-	#Corremos funciones de caracterizacion de 1SPE
 	for k in range(0,ktrazasPorTemperatura):
 		print("Iniciando corrida " +str(k)+" setpoint "+str(temperatura))
-		corrida = medir_osc('2.0MV','7.0MV','-3.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9),False)
+		corrida = importar_lecroy('42_000000023.trc')
 		intentos = 0
 		while intentos < 10 and corrida == False:
-			corrida = medir_osc('2.0MV','7.0MV','-3.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9),False)
+			corrida = medir_osc('2.0MV','7.0MV','-9.0MV',1000,str(temperatura).zfill(2)+"_"+str(k).zfill(9),False)
 			intentos+=1
 
 		if analizar == True:
@@ -791,8 +637,9 @@ for temperatura in temperaturasAMedir:
 			#[desviacion, minimos, [integrales], [anchos],[risetime]]
 			for j in range(0, len(corrida)):
 				#integracion y anchos
-				integrales, anchos, desviacion, risetime = sipm_integrar(corrida[j],False,True,False)
+				integrales, anchos, desviacion, risetime = sipm_integrar(corrida[j],True,True,False)
 				#nos quedamos unicamente en los casos donde no hubo problemas
+				intr = input("asd")
 				#para integrar. Llenamos los resultados de esta pasada
 				resj=[]
 				if integrales != False:

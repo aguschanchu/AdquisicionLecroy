@@ -1,0 +1,10 @@
+Corrida2: Si bien se adquirieron las trazas correctamente, cometimos el error de triggerear con un valor superior a 1SPE; cosa que nos dimos cuenta
+a posteriori.
+
+Corrida3: Se agregó el código de Joaco para adquirir trazas para calcular rate del dark rate.
+Inicialmente el algoritmo fue programado para comenzar en 5°C, sin embargo, no logró bajar la temperatura por debajo de los 9°. Suponemos,
+que se debe a la disipación resultada por la electrónica colocada en su interior. De modo, que corrimos nuevamente, pero, comenzando en 10°C.
+Logró medir para 10° y 11°, sin embargo, dejó de medir súbitamente, ya que la temperatura comenzó a dispararse haccia arriba hasta llegar a 30°. Al cabo de un tiempo,
+notamos que el PID estaba fallando, ya que la Peltier no respondía a los cambios que este le ordenaba. Al llegar al laboratorio, nos encontramos que se había
+derretido una de las borneras del puente H. Suponemos que fue por una mala colocación original, y procedimos a reemplazarla y verificar que el resto
+de los componentes, funcionasen correctamente.
