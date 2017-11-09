@@ -8,3 +8,6 @@ Logró medir para 10° y 11°, sin embargo, dejó de medir súbitamente, ya que 
 notamos que el PID estaba fallando, ya que la Peltier no respondía a los cambios que este le ordenaba. Al llegar al laboratorio, nos encontramos que se había
 derretido una de las borneras del puente H. Suponemos que fue por una mala colocación original, y procedimos a reemplazarla y verificar que el resto
 de los componentes, funcionasen correctamente.
+
+Corrida4: Se cambio el codigo del analizador, para analizar al final la linea de base, así, pudiendo utilizar las trazas ya medidas. Asimismo, el min_dist, para buscar
+a lo sumo un pico por traza.
