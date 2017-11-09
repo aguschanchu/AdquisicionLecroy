@@ -466,7 +466,7 @@ def sipm_integrar(traza,graficar=False,anchopico=False,correccion=False):
 #####
 #CONFIG
 script_dir = 'C:/Users/Agustin/Dropbox/Exactas/ITeDA/Scripts/Lecroy/Corrida3/'
-temperaturasAMedir = list(range(10,11))
+temperaturasAMedir = list(range(11,12))
 ktrazasPorTemperatura = 50
 #rm = visa.ResourceManager('@py')
 #inst = rm.open_resource("USB0::1155::30016::SPD00002140064::0::INSTR")
@@ -509,9 +509,8 @@ for temperatura in temperaturasAMedir:
 			#[desviacion, minimos, [integrales], [anchos],[risetime]]
 			for j in range(0, len(corrida)):
 				#integracion y anchos
-				integrales, anchos, desviacion, risetime = sipm_integrar(corrida[j],True,True,False)
+				integrales, anchos, desviacion, risetime = sipm_integrar(corrida[j],False,True,False)
 				#nos quedamos unicamente en los casos donde no hubo problemas
-				time.sleep(4)
 				#para integrar. Llenamos los resultados de esta pasada
 				resj=[]
 				if integrales != False:
@@ -558,13 +557,13 @@ for temperatura in temperaturasAMedir:
 					guardartr = False
 					descartados+=1
 			if guardartr == True:
-				salida.write(str(i[1])+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
+				salida.write(str(i[1]))
 				for j in i[2]:
-					salida2.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
+					salida2.write(str(j))
 				for j in i[3]:
-					salida3.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
+					salida3.write(str(j))
 				for j in i[4]:
-					salida4.write(str(j)+","+str(temperatura)+","+str(time.time()-inicio)+'\n')
+					salida4.write(str(j))
 		salida.close()
 		salida2.close()
 		salida3.close()
@@ -579,9 +578,3 @@ a = [log(float(x.strip())) for x in content]
 print(len(a))
 plot([go.Histogram(x=a,autobinx=True)], filename='integrales.html')
 '''
-
-
-
-salida.close()
-salida2.close()
-salida3.close()
